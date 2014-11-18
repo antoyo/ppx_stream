@@ -16,7 +16,7 @@
 
 PROGRAM = test
 
-OCAMLFLAGS = -ppx ../src/ppx_stream_pattern_match
+OCAMLFLAGS = -ppx ../src/ppx_stream
 
 FILES = $(removesuffix $(glob *.ml))
 OCamlProgram($(PROGRAM), $(FILES))

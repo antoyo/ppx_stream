@@ -16,7 +16,7 @@
  * <http://www.gnu.org/licenses/>.
  *)
 
-(*let empty_stream : string Stream.t = [%stream]
+let empty_stream : string Stream.t = [%stream]
 
 let singleton_stream : string Stream.t = [%stream "hello"]
 
@@ -26,7 +26,7 @@ let int_stream = [%stream 1; 2; 3]
 
 let char_stream = [%stream 'a'; 'b'; 'c']
 
-let float_stream = [%stream 1.2; 2.3; 3.4]*)
+let float_stream = [%stream 1.2; 2.3; 3.4]
 
 (*let combine_stream stream1 stream2 =
     let stream2_next _ =
@@ -51,7 +51,7 @@ let list_stream = Stream.of_list ["hello"; "world"; "!"]
 let list_stream = Stream.of_list ["bonjour"; "moi"; "!"]
 
 let () =
-    let _ = match%parse list_stream with
+    (*let _ = match%parse list_stream with
     | ["hello"; "world"; "!"] ->
             print_endline "Hello World!"
     | ["bonjour"; word] ->
@@ -67,26 +67,13 @@ let () =
             print_string "Bonjour ";
             print_string word;
             print_endline "!";
-    | ["!"] ->
+    | "!" ->
             print_endline "Exclamation"
     | _ ->
             print_endline "No choice."
-    in
-    ()
+    in*)
 
-    (*match Stream.npeek 3 list_stream with
-    | ["hello"; word; "!"] ->
-        for _ = 1 to 3 do
-            Stream.junk list_stream
-        done;
-        print_endline word;
-        print_endline "Hello World!";
-    | _ -> (match Stream.npeek 2 list_stream with
-        | ["bonjour"; word] ->
-                print_endline "Bonjour!"
-    )*)
-
-    (*print_endline (Stream.next singleton_stream);
+    print_endline (Stream.next singleton_stream);
     print_endline (Stream.next list_stream);
     print_endline (Stream.next list_stream);
     print_endline (Stream.next list_stream);
@@ -101,7 +88,7 @@ let () =
     print_char (Stream.next char_stream);
     print_endline "";
     print_float (Stream.next float_stream);
-    print_endline "";*)
+    print_endline "";
     (*print_endline (Stream.next combined_stream);
     print_endline (Stream.next combined_stream);
     print_endline (Stream.next combined_stream);

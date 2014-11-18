@@ -16,6 +16,11 @@
  * <http://www.gnu.org/licenses/>.
  *)
 
+(*
+ * TODO: allow creating stream from list containing streams (check how the camlp4 stream extension do it).
+ * TODO: allow pattern match against a list containing other streams.
+ *)
+
 open Ast_mapper
 open Ast_helper
 open Asttypes
@@ -23,16 +28,19 @@ open Parsetree
 open Longident
 open Location
 
-exception Error of Location.t
+exception MatchError of Location.t
+exception StreamError of Location.t
 
 let () =
     Location.register_error_of_exn (fun exn ->
         match exn with
-        | Error loc ->
-                Some (error ~loc "match%parse accepts list of elements, e.g. match%parse expression with | [\"if\"; \"(\"]")
+        | MatchError loc ->
+                Some (error ~loc "match%parse accepts list of elements of a single element, e.g. match%parse expression with | [\"if\"; \"(\"] | \"return\"")
+        | StreamError loc ->
+                Some (error ~loc "[%stream] accepts list of elements, e.g. [%stream \"if\"; \"(\"]")
         | _ -> None)
 
-(*let gen_stream_from_list loc elements =
+let gen_stream_from_list loc elements =
     Exp.apply ~loc (Exp.ident ({
         txt = Ldot (Lident "Stream", "of_list");
         loc
@@ -68,6 +76,7 @@ let rec stream_subexpression loc = function
         [ "", hd_expression
         ; "", tl_expression
         ]
+    | _ -> raise (StreamError loc)
 
 let stream_expression loc pstr =
     let elements = match pstr with
@@ -82,11 +91,11 @@ let stream_expression loc pstr =
             txt = Lident "[]";
             loc
         } None
-    | _ -> raise (Error loc)
-    in gen_stream_from_list loc elements*)
+    | _ -> raise (MatchError loc)
+    in gen_stream_from_list loc elements
 
-let rec list_length = function
-    | {ppat_desc = Ppat_construct ({
+let rec list_length loc = function
+    | { ppat_desc = Ppat_construct ({
             txt = Lident "::"
         }, Some {
             ppat_desc = Ppat_tuple tuple_list
@@ -96,47 +105,87 @@ let rec list_length = function
             | [{
                 ppat_desc = Ppat_constant _ | Ppat_var _
             }; rest] ->
-                1 + list_length rest
+                1 + (list_length loc rest)
+            | _ -> raise (MatchError loc)
             )
-    | {ppat_desc = Ppat_construct ({
+    | { ppat_desc = Ppat_construct ({
             txt = Lident "[]"
         }, None)
     } -> 0
+    | { ppat_desc = Ppat_constant _ } -> 1
     | { ppat_desc = Ppat_any } -> 0
+    | _ -> raise (MatchError loc)
+
+let is_list loc = function
+    | { ppat_desc = Ppat_construct ({
+            txt = Lident "::"
+        }, _)
+    } -> true
+    | { ppat_desc = Ppat_constant _ } -> false
+    | { ppat_desc = Ppat_any } -> false
+    | _ -> raise (MatchError loc)
+
+let constant_to_option loc constant =
+    Pat.construct ({
+            txt = Lident "Some";
+            loc;
+    }) (Some constant)
 
 let transform_match_case loc match_expression stream_list statements other_cases =
-    let length = 
-        try
-            list_length stream_list
-        with Match_failure _ -> raise (Error loc)
-    in
-    if length > 0 then (
-        Exp.match_ (
-            Exp.apply ~loc (Exp.ident ({
-                txt = Ldot (Lident "Stream", "npeek");
-                loc;
-            }))
-            [ ("", Exp.constant (Const_int length))
-            ; ("", match_expression)
-            ]
-        )
-        (Exp.case stream_list
-            (Exp.sequence (Exp.for_ (Pat.any ()) (Exp.constant (Const_int 1)) (Exp.constant (Const_int length)) Upto (
+    let length = list_length loc stream_list in
+    let is_list = is_list loc stream_list in
+    if is_list then (
+        if length > 0 then (
+            Exp.match_ (
                 Exp.apply ~loc (Exp.ident ({
-                    txt = Ldot (Lident "Stream", "junk");
+                    txt = Ldot (Lident "Stream", "npeek");
                     loc;
                 }))
-                [ ("", match_expression) ]
-            )) statements)
-        ::
-            (match other_cases with
-            | Some cases -> [Exp.case (Pat.any ()) cases]
-            | None -> []
+                [ ("", Exp.constant (Const_int length))
+                ; ("", match_expression)
+                ]
             )
+            (Exp.case stream_list
+                (Exp.sequence (Exp.for_ (Pat.any ()) (Exp.constant (Const_int 1)) (Exp.constant (Const_int length)) Upto (
+                    Exp.apply ~loc (Exp.ident ({
+                        txt = Ldot (Lident "Stream", "junk");
+                        loc;
+                    }))
+                    [ ("", match_expression) ]
+                )) statements)
+            ::
+                (match other_cases with
+                | Some cases -> [Exp.case (Pat.any ()) cases]
+                | None -> []
+                )
+            )
+        )
+        else (
+            statements
         )
     )
     else (
-        statements
+            Exp.match_ (
+                Exp.apply ~loc (Exp.ident ({
+                    txt = Ldot (Lident "Stream", "peek");
+                    loc;
+                }))
+                [ ("", match_expression) ]
+            )
+            (Exp.case (constant_to_option loc stream_list)
+                (Exp.sequence (
+                    Exp.apply ~loc (Exp.ident ({
+                        txt = Ldot (Lident "Stream", "junk");
+                        loc;
+                    }))
+                    [ ("", match_expression) ]
+                ) statements)
+            ::
+                (match other_cases with
+                | Some cases -> [Exp.case (Pat.any ()) cases]
+                | None -> []
+                )
+            )
     )
 
 let rec transform_match_cases loc match_expression = function
@@ -149,6 +198,7 @@ let rec transform_match_cases loc match_expression = function
         pc_rhs = statements;
     } :: rest ->
         transform_match_case loc match_expression stream_list statements (Some (transform_match_cases loc match_expression rest))
+    | [] -> raise (MatchError loc)
 
 let match_parse loc = function
     | PStr [{
@@ -158,12 +208,13 @@ let match_parse loc = function
         }, _)
     }] ->
         transform_match_cases loc match_expression match_cases
+    | _ -> raise (MatchError loc)
 
 let stream_mapper argv =
     { default_mapper with
         expr = fun mapper expr ->
             match expr with
-            (*| { pexp_desc = Pexp_extension ({ txt = "stream"; loc }, pstr)} -> stream_expression loc pstr*)
+            | { pexp_desc = Pexp_extension ({ txt = "stream"; loc }, pstr)} -> stream_expression loc pstr
             | { pexp_desc = Pexp_extension ({ txt = "parse"; loc }, pstr)} -> match_parse loc pstr
             | x -> default_mapper.expr mapper x
     }
