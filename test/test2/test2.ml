@@ -16,7 +16,7 @@
  * <http://www.gnu.org/licenses/>.
  *)
 
-let list_stream = [%stream "if"; "("; ")"]
+let list_stream = [%stream "x"; "="; "42"; "+"; "24"; ";"]
 
 type expression =
     | Addition of int * int
@@ -25,29 +25,51 @@ type expression =
 let expression stream = match%parse stream with
     | [operand1; "+"; operand2] -> Addition (int_of_string operand1, int_of_string operand2)
 
-(*let assignation stream = match%parse stream with
-    | [name; "="; expression as value] -> Assignation (name, value)*)
+let start_assign stream = match%parse stream with
+    | [name; "="] -> name
+
+let value stream = match%parse stream with
+    | [expression as value] -> value
+
+let assignation stream = match%parse stream with
+    (*| [start_assign as name; value as v] -> Assignation (name, v)*)
+    (*| [start_assign as name; value as v; ";"] -> Assignation (name, v)*)
+    (*| [name; "="] -> value stream name*)
+    | [name; "="; expression as value; ";"] -> Assignation (name, value)
+    (*| [name; "="; expression as value] -> Assignation (name, value)*)
+
+(*let assignation stream = match Stream.npeek 2 stream with
+    | [name; "="] ->
+            for _ = 1 to 2 do
+                Stream.junk stream
+            done;
+            let value = expression stream in
+            match Stream.npeek 1 stream with
+            | [";"] ->
+                    for _ = 1 to 4 do
+                        Stream.junk stream
+                    done;
+                    Assignation (name, value)*)
 
 let () =
-    let _ = match%parse list_stream with
-    | ["hello"; "world"; "!"] ->
-            print_endline "Hello World!"
-    | ["bonjour"; word] ->
-            print_string "Bonjour ";
-            print_string word;
-            print_endline "!";
+    match assignation list_stream with
+    | Assignation (name, value) -> print_endline name
+
+    (*let _ = match%parse list_stream with
+    | ["x"; "="; "10"] ->
+            print_endline "x = 10"
+    | ["="; word] ->
+            print_string "= ";
+            print_endline word;
     in
     let _ = match%parse list_stream with
-    | ["hello"; word; "!"] ->
-            print_endline word;
-            print_endline "Hello World!"
-    | ["bonjour"; word] ->
-            print_string "Bonjour ";
-            print_string word;
-            print_endline "!";
-    | "!" ->
-            print_endline "Exclamation"
+    | [";"; word; "="] ->
+            print_endline word
+    | ["="; word] ->
+            print_endline word
+    | ";" ->
+            print_endline ";"
     | _ ->
             print_endline "No choice."
     in
-    ()
+    ()*)
