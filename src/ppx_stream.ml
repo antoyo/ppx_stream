@@ -17,6 +17,9 @@
  *)
 
 (*
+ * FIXME: when using sub-streams, the next cases of the match are missing.
+ * FIXME: some locations are missing.
+ * TODO: think about what to do when a Stream.failure exception is thrown.
  * TODO: when using Stream.npeek 1, switch to Stream.peek.
  * TODO: allow an attribute like [@repeat] to support infinite streams.
  * TODO: a match%parse in a match%parse does not work.
@@ -116,18 +119,15 @@ let rec list_length loc = function
             txt = Lident "[]"
         }, None)
     } -> 0
-    | { ppat_desc = Ppat_constant _ } -> 1
     | { ppat_desc = Ppat_any } -> 0
-    | _ -> raise (MatchError loc)
+    | { ppat_desc = _ } -> 1
 
 let is_list loc = function
     | { ppat_desc = Ppat_construct ({
             txt = Lident "::"
         }, _)
     } -> true
-    | { ppat_desc = Ppat_constant _ } -> false
-    | { ppat_desc = Ppat_any } -> false
-    | _ -> raise (MatchError loc)
+    | { ppat_desc = _ } -> false
 
 let constant_to_option loc constant =
     Pat.construct ({
