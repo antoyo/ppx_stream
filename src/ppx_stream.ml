@@ -17,10 +17,9 @@
  *)
 
 (*
- * TODO: a match%parse in a match%parse does not work.
- * TODO: allow using function%parse.
  * TODO: when using Stream.npeek 1, switch to Stream.peek.
  * TODO: allow an attribute like [@repeat] to support infinite streams.
+ * TODO: a match%parse in a match%parse does not work.
  *)
 
 open Ast_mapper
@@ -374,6 +373,20 @@ let match_parse loc = function
         }, _)
     }] ->
         transform_match_cases loc match_expression match_cases
+    | PStr [{
+        pstr_desc = Pstr_eval ({
+            pexp_loc = loc;
+            pexp_desc = Pexp_function match_cases;
+        }, _)
+    }] ->
+        Exp.fun_ "" None (Pat.var {
+            txt = "__ppx_stream__";
+            loc;
+        })
+        (transform_match_cases loc (Exp.ident {
+            txt = Lident "__ppx_stream__";
+            loc;
+        }) match_cases)
     | _ -> raise (MatchError loc)
 
 let stream_mapper argv =
