@@ -155,7 +155,15 @@ let type_stream_pattern loc stream_list : typed_stream list list =
             })
         } ->
             (match tuple_list with
-            | [{ ppat_desc = Ppat_alias _ } as alias; rest] ->
+            | [{ ppat_attributes = [({
+                    txt = "as"
+            }, PStr [{
+                pstr_desc = Pstr_eval ({
+                    pexp_desc = Pexp_ident {
+                        txt = Lident _
+                    }
+                }, _)
+            }])]} as alias; rest] ->
                     type_stream_pattern (SubStream alias :: acc) rest
             | [_ as value; rest] ->
                     type_stream_pattern (Value value :: acc) rest
@@ -220,13 +228,18 @@ let rec pattern_of_typed_stream_list loc = function
             } None
 
 let rec create_lets loc match_expression statements = function
-    | [SubStream ({ ppat_desc =
-                Ppat_alias ({
-                    ppat_desc = Ppat_var { txt = sub_stream_name };
-                }, {
-                    txt = variable_name;
-                })
-            })] ->
+    | [SubStream ({
+            ppat_desc = Ppat_var { txt = sub_stream_name };
+             ppat_attributes = [({
+                    txt = "as"
+            }, PStr [{
+                pstr_desc = Pstr_eval ({
+                    pexp_desc = Pexp_ident {
+                        txt = Lident variable_name
+                    }
+                }, _)
+            }])]
+        })] ->
         (Exp.let_ Nonrecursive [(Vb.mk (Pat.var {
             txt = variable_name;
             loc;
@@ -238,13 +251,18 @@ let rec create_lets loc match_expression statements = function
         )
         )]
         statements)
-    | SubStream ({ ppat_desc =
-        Ppat_alias ({
+    | SubStream ({
             ppat_desc = Ppat_var { txt = sub_stream_name };
-        }, {
-            txt = variable_name;
-        })
-    }) :: rest ->
+             ppat_attributes = [({
+                    txt = "as"
+            }, PStr [{
+                pstr_desc = Pstr_eval ({
+                    pexp_desc = Pexp_ident {
+                        txt = Lident variable_name
+                    }
+                }, _)
+            }])]
+        }) :: rest ->
         (Exp.let_ Nonrecursive [(Vb.mk (Pat.var {
             txt = variable_name;
             loc;
@@ -260,12 +278,17 @@ let rec create_lets loc match_expression statements = function
 
 and create_matches loc match_expression typed_stream_list statements other_cases length =
     let rec create_matches = function
-        | [SubStream ({ ppat_desc =
-            Ppat_alias ({
-                ppat_desc = Ppat_var { txt = sub_stream_name };
-            }, {
-                txt = variable_name;
-            })
+        | [SubStream ({
+            ppat_desc = Ppat_var { txt = sub_stream_name };
+             ppat_attributes = [({
+                    txt = "as"
+            }, PStr [{
+                pstr_desc = Pstr_eval ({
+                    pexp_desc = Pexp_ident {
+                        txt = Lident variable_name
+                    }
+                }, _)
+            }])]
         }) :: _ as sub_stream_list] -> create_lets loc match_expression statements sub_stream_list
         | (SubStream _ :: _ as sub_stream_list) :: rest -> create_lets loc match_expression (create_matches rest) sub_stream_list
         | [(Value _ :: _ as value_list)] ->

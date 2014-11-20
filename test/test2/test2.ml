@@ -29,17 +29,17 @@ let start_assign stream = match%parse stream with
     | [name; "="] -> name
 
 let value stream = match%parse stream with
-    | [expression as value] -> value
+    | [expression [@as value]] -> value
 
 let value = function%parse
-    | [expression as value] -> value
+    | [expression [@as value]] -> value
 
 let assignation stream = match%parse stream with
     (*| [name; "="] -> (match%parse stream with
         | [expression as value] -> Assignation (name, value)
     )*)
     (*| [start_assign as name; value as v] -> Assignation (name, v)*)
-    | [start_assign as name; value as v; ";"] -> Assignation (name, v)
+    | [start_assign [@as name]; value [@as v]; ";"] -> Assignation (name, v)
     (*| [name; "="] -> Assignation (name, value stream)*)
     (*| [name; "="; expression as value; ";"] -> Assignation (name, value)*)
     (*| [name; "="; expression as value] -> Assignation (name, value)*)
