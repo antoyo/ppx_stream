@@ -14,4 +14,15 @@
 # License along with this program.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-.SUBDIRS: $(glob D, *)
+PROGRAM = test2
+
+OCAMLFLAGS = -ppx $(ROOT)/src/ppx_stream
+
+FILES = $(removesuffix $(glob *.ml))
+OCamlProgram($(PROGRAM), $(FILES))
+
+.DEFAULT: $(PROGRAM)
+
+.PHONY: clean
+clean:
+	rm -f $(filter-proper-targets $(glob $(addsuffix .*, $(FILES)))) $(PROGRAM) $(PROGRAM).opt $(addsuffix .cmo, $(FILES))

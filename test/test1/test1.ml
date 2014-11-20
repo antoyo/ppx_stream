@@ -28,51 +28,16 @@ let char_stream = [%stream 'a'; 'b'; 'c']
 
 let float_stream = [%stream 1.2; 2.3; 3.4]
 
-(*let combine_stream stream1 stream2 =
-    let stream2_next _ =
-        try
-            Some (Stream.next stream2)
-        with Stream.Failure ->
-            None
-    in
-    let stream1_next _ =
-        try
-            Some (Stream.next stream1)
-        with Stream.Failure ->
-            stream2_next 0
-    in
-    Stream.from stream1_next*)
-
-(*let combined_stream = combine_stream list_stream singleton_stream*)
-
-(*let combined_stream = [%stream list_stream; singleton_stream]*)
+let singleton_stream2 : string Stream.t = [%stream "hello"]
+let list_stream2 = [%stream "hello"; "world"; "!"]
+let combined_stream = [%stream list_stream2 [@stream]; singleton_stream2 [@stream]]
+let combined_stream = [%stream list_stream2 [@stream]; "hello"]
+let combined_stream = [%stream "hello"; list_stream2 [@stream]]
 
 let list_stream = Stream.of_list ["hello"; "world"; "!"]
 let list_stream = Stream.of_list ["bonjour"; "moi"; "!"]
 
 let () =
-    (*let _ = match%parse list_stream with
-    | ["hello"; "world"; "!"] ->
-            print_endline "Hello World!"
-    | ["bonjour"; word] ->
-            print_string "Bonjour ";
-            print_string word;
-            print_endline "!";
-    in
-    let _ = match%parse list_stream with
-    | ["hello"; word; "!"] ->
-            print_endline word;
-            print_endline "Hello World!"
-    | ["bonjour"; word] ->
-            print_string "Bonjour ";
-            print_string word;
-            print_endline "!";
-    | "!" ->
-            print_endline "Exclamation"
-    | _ ->
-            print_endline "No choice."
-    in*)
-
     print_endline (Stream.next singleton_stream);
     print_endline (Stream.next list_stream);
     print_endline (Stream.next list_stream);
@@ -89,7 +54,7 @@ let () =
     print_endline "";
     print_float (Stream.next float_stream);
     print_endline "";
-    (*print_endline (Stream.next combined_stream);
     print_endline (Stream.next combined_stream);
     print_endline (Stream.next combined_stream);
-    print_endline (Stream.next combined_stream);*)
+    print_endline (Stream.next combined_stream);
+    print_endline (Stream.next combined_stream);
