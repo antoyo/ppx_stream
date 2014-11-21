@@ -18,9 +18,8 @@
 
 (*
  * FIXME: when using sub-streams, the next cases of the match are missing.
- * FIXME: some locations are missing.
+ * FIXME: some locations are missing (perhaps adding ~loc to each Exp.function will fix this issue).
  * TODO: think about what to do when a Stream.failure exception is thrown.
- * TODO: when using Stream.npeek 1, switch to Stream.peek.
  * TODO: allow an attribute like [@repeat] to support infinite streams.
  * TODO: a match%parse in a match%parse does not work.
  *)
@@ -122,31 +121,13 @@ let rec list_length loc = function
     | { ppat_desc = Ppat_any } -> 0
     | { ppat_desc = _ } -> 1
 
-let is_list loc = function
-    | { ppat_desc = Ppat_construct ({
-            txt = Lident "::"
-        }, _)
-    } -> true
-    | { ppat_desc = _ } -> false
-
 let constant_to_option loc constant =
     Pat.construct ({
             txt = Lident "Some";
             loc;
     }) (Some constant)
 
-let type_stream_pattern loc stream_list : typed_stream list list =
-    let rec group_similar_pattern acc = function
-        | [] -> [List.rev acc]
-        | Value _ as value :: rest -> (match acc with
-            | Value _ :: _ | [] -> group_similar_pattern (value :: acc) rest
-            | SubStream _ :: _ -> List.rev acc :: group_similar_pattern [value] rest
-        )
-        | SubStream _ as sub_stream :: rest -> (match acc with
-            | Value _ :: _ -> List.rev acc :: group_similar_pattern [sub_stream] rest
-            | SubStream _ :: _ | [] -> group_similar_pattern (sub_stream :: acc) rest
-        )
-    in
+let type_stream_pattern loc stream_list =
     let rec type_stream_pattern acc = function
         | { ppat_desc = Ppat_construct ({
                 txt = Lident "::"
@@ -154,9 +135,9 @@ let type_stream_pattern loc stream_list : typed_stream list list =
                 ppat_desc = Ppat_tuple tuple_list
             })
         } ->
-            (match tuple_list with
+        (match tuple_list with
             | [{ ppat_attributes = [({
-                    txt = "as"
+                txt = "as"
             }, PStr [{
                 pstr_desc = Pstr_eval ({
                     pexp_desc = Pexp_ident {
@@ -164,54 +145,19 @@ let type_stream_pattern loc stream_list : typed_stream list list =
                     }
                 }, _)
             }])]} as alias; rest] ->
-                    type_stream_pattern (SubStream alias :: acc) rest
-            | [_ as value; rest] ->
+                type_stream_pattern (SubStream alias :: acc) rest
+            | [value; rest] ->
                     type_stream_pattern (Value value :: acc) rest
             | _ -> raise (MatchError loc)
-            )
-        | { ppat_desc = Ppat_construct ({
-                txt = Lident "[]"
+    )
+    | { ppat_desc = Ppat_construct ({
+        txt = Lident "[]"
             }, None)
-        } -> acc
-        | _ -> raise (MatchError loc)
-    in group_similar_pattern [] (List.rev (type_stream_pattern [] stream_list))
-
-let create_one_match loc match_expression stream_list statements other_cases =
-    Exp.match_ (
-        Exp.apply ~loc (Exp.ident ({
-            txt = Ldot (Lident "Stream", "peek");
-            loc;
-        }))
-        [ ("", match_expression) ]
-    )
-    (Exp.case (constant_to_option loc stream_list)
-        (Exp.sequence (
-            Exp.apply ~loc (Exp.ident ({
-                txt = Ldot (Lident "Stream", "junk");
-                loc;
-            }))
-            [ ("", match_expression) ]
-        ) statements)
-    ::
-        (match other_cases with
-        | Some cases -> [Exp.case (Pat.any ()) cases]
-        | None -> []
-        )
-    )
+    } -> acc
+    | value -> [Value value]
+    in List.rev (type_stream_pattern [] stream_list)
 
 let rec pattern_of_typed_stream_list loc = function
-    | [Value value | SubStream value] ->
-            Pat.construct ({
-                txt = Lident "::";
-                loc;
-            }) (Some (Pat.tuple
-                [ value
-                ; Pat.construct {
-                    txt = Lident "[]";
-                    loc;
-                } None
-                ])
-            )
     | (Value value | SubStream value) :: rest ->
             Pat.construct ({
                 txt = Lident "::";
@@ -228,152 +174,75 @@ let rec pattern_of_typed_stream_list loc = function
             } None
 
 let rec create_lets loc match_expression statements = function
-    | [SubStream ({
-            ppat_desc = Ppat_var { txt = sub_stream_name };
-             ppat_attributes = [({
-                    txt = "as"
-            }, PStr [{
-                pstr_desc = Pstr_eval ({
-                    pexp_desc = Pexp_ident {
-                        txt = Lident variable_name
-                    }
-                }, _)
-            }])]
-        })] ->
-        (Exp.let_ Nonrecursive [(Vb.mk (Pat.var {
-            txt = variable_name;
-            loc;
-        }) (Exp.apply ~loc (Exp.ident ({
-            txt = Lident sub_stream_name;
-            loc;
-        }))
-        [ ("", match_expression)]
-        )
-        )]
-        statements)
     | SubStream ({
-            ppat_desc = Ppat_var { txt = sub_stream_name };
+        ppat_desc = Ppat_var { txt = sub_stream_name };
              ppat_attributes = [({
-                    txt = "as"
+                 txt = "as"
             }, PStr [{
                 pstr_desc = Pstr_eval ({
                     pexp_desc = Pexp_ident {
                         txt = Lident variable_name
-                    }
+                     }
                 }, _)
             }])]
-        }) :: rest ->
-        (Exp.let_ Nonrecursive [(Vb.mk (Pat.var {
-            txt = variable_name;
-            loc;
-        }) (Exp.apply ~loc (Exp.ident ({
-            txt = Lident sub_stream_name;
-            loc;
-        }))
-        [ ("", match_expression)]
-        )
-        )]
-        (create_lets loc match_expression statements rest))
+        }) ->
+            (Exp.let_ Nonrecursive [(Vb.mk (Pat.var {
+                txt = variable_name;
+                loc;
+            }) (Exp.apply ~loc (Exp.ident ({
+                txt = Lident sub_stream_name;
+                loc;
+            }))
+            [ ("", match_expression)]
+            )
+            )]
+            statements)
     | _ -> raise UnexpectedError
 
-and create_matches loc match_expression typed_stream_list statements other_cases length =
+let create_match_peek loc match_expression value statements other_cases =
+    Exp.match_ (
+        Exp.apply ~loc (Exp.ident ({
+            txt = Ldot (Lident "Stream", "peek");
+            loc;
+        }))
+        [ ("", match_expression) ]
+    )
+    (Exp.case (constant_to_option loc value)
+    (Exp.sequence
+       (Exp.apply ~loc (Exp.ident ({
+           txt = Ldot (Lident "Stream", "junk");
+           loc;
+        }))
+       [ ("", match_expression) ])
+       statements
+    )
+    :: other_cases
+    )
+
+let create_matches loc match_expression typed_stream_list statements other_cases length =
     let rec create_matches = function
-        | [SubStream ({
-            ppat_desc = Ppat_var { txt = sub_stream_name };
-             ppat_attributes = [({
-                    txt = "as"
-            }, PStr [{
-                pstr_desc = Pstr_eval ({
-                    pexp_desc = Pexp_ident {
-                        txt = Lident variable_name
-                    }
-                }, _)
-            }])]
-        }) :: _ as sub_stream_list] -> create_lets loc match_expression statements sub_stream_list
-        | (SubStream _ :: _ as sub_stream_list) :: rest -> create_lets loc match_expression (create_matches rest) sub_stream_list
-        | [(Value _ :: _ as value_list)] ->
-                let stream_list = pattern_of_typed_stream_list loc value_list in
-                Exp.match_ (
-                    Exp.apply ~loc (Exp.ident ({
-                        txt = Ldot (Lident "Stream", "npeek");
-                        loc;
-                    }))
-                    [ ("", Exp.constant (Const_int (List.length value_list)))
-                    ; ("", match_expression)
-                    ]
-                )
-                (Exp.case stream_list
-                    (Exp.sequence (Exp.for_ (Pat.any ()) (Exp.constant (Const_int 1)) (Exp.constant (Const_int (List.length value_list))) Upto (
-                        Exp.apply ~loc (Exp.ident ({
-                            txt = Ldot (Lident "Stream", "junk");
-                            loc;
-                        }))
-                        [ ("", match_expression) ]
-                    )) statements)
-                    ::
-                    (match other_cases with
+        | [SubStream _ as sub_stream] ->
+                create_lets loc match_expression statements sub_stream
+        | (SubStream _ as sub_stream) :: rest ->
+                create_lets loc match_expression (create_matches rest) sub_stream
+        | [(Value value)] ->
+                create_match_peek loc match_expression value statements (match other_cases with
                     | Some cases -> [Exp.case (Pat.any ()) cases]
                     | None -> []
                     )
-                )
-        | (Value _ :: _ as value_list) :: rest ->
-                let stream_list = pattern_of_typed_stream_list loc value_list in
-                Exp.match_ (
-                    Exp.apply ~loc (Exp.ident ({
-                        txt = Ldot (Lident "Stream", "npeek");
-                        loc;
-                    }))
-                    [ ("", Exp.constant (Const_int (List.length value_list)))
-                    ; ("", match_expression)
-                    ]
-                )
-                [(Exp.case stream_list
-                    ((Exp.sequence (Exp.for_ (Pat.any ()) (Exp.constant (Const_int 1)) (Exp.constant (Const_int (List.length value_list))) Upto (
-                            Exp.apply ~loc (Exp.ident ({
-                                txt = Ldot (Lident "Stream", "junk");
-                                loc;
-                            }))
-                            [ ("", match_expression) ]
-                        )) (create_matches rest)
-                    ))
-                )]
+        | (Value value) :: rest ->
+                create_match_peek loc match_expression value (create_matches rest) []
         | _ -> raise UnexpectedError
     in create_matches typed_stream_list
 
 let transform_match_case loc match_expression stream_list statements other_cases =
     let length = list_length loc stream_list in
-    let is_list = is_list loc stream_list in
-    if is_list then (
-        if length > 0 then (
-            let typed_stream_list = type_stream_pattern loc stream_list in
-            create_matches loc match_expression typed_stream_list statements other_cases length
-        )
-        else (
-            statements
-        )
+    if length > 0 then (
+        let typed_stream_list = type_stream_pattern loc stream_list in
+        create_matches loc match_expression typed_stream_list statements other_cases length
     )
     else (
-        Exp.match_ (
-            Exp.apply ~loc (Exp.ident ({
-                txt = Ldot (Lident "Stream", "peek");
-                loc;
-            }))
-            [ ("", match_expression) ]
-        )
-        (Exp.case (constant_to_option loc stream_list)
-            (Exp.sequence (
-                Exp.apply ~loc (Exp.ident ({
-                    txt = Ldot (Lident "Stream", "junk");
-                    loc;
-                }))
-                [ ("", match_expression) ]
-            ) statements)
-        ::
-            (match other_cases with
-            | Some cases -> [Exp.case (Pat.any ()) cases]
-            | None -> []
-            )
-        )
+        statements
     )
 
 let rec transform_match_cases loc match_expression = function

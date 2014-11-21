@@ -58,6 +58,9 @@ let assignation stream = match%parse stream with
                     Assignation (name, value)*)
 
 let () =
+    (*match%parse list_stream with
+    | "x" -> print_endline "variable"*)
+
     match assignation list_stream with
     | Assignation (name, value) -> print_endline name
 
