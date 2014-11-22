@@ -17,9 +17,11 @@
  *)
 
 (*
- * FIXME: when using sub-streams, the next cases of the match are missing.
+ * FIXME: when using sub-streams, the next cases of the match are missing (
+     * surround sub-stream matching with try ... with Stream.Failure -> None and if None is returned, try the next cases,
+ * )
  * FIXME: some locations are missing (perhaps adding ~loc to each Exp.function will fix this issue).
- * TODO: think about what to do when a Stream.failure exception is thrown.
+ * TODO: use only one match when for all the cases with the same length.
  * TODO: allow an attribute like [@repeat] to support infinite streams.
  * TODO: a match%parse in a match%parse does not work.
  *)
@@ -34,6 +36,10 @@ open Location
 exception MatchError of Location.t
 exception StreamError of Location.t
 exception UnexpectedError
+
+type exception_type =
+    | Error
+    | Failure
 
 type typed_stream =
     | Value of pattern
@@ -199,7 +205,7 @@ let rec create_lets loc match_expression statements = function
             statements)
     | _ -> raise UnexpectedError
 
-let create_match_peek loc match_expression value statements other_cases =
+let create_match_peek loc match_expression value statements other_cases exception_type =
     Exp.match_ (
         Exp.apply ~loc (Exp.ident ({
             txt = Ldot (Lident "Stream", "peek");
@@ -207,39 +213,62 @@ let create_match_peek loc match_expression value statements other_cases =
         }))
         [ ("", match_expression) ]
     )
-    (Exp.case (constant_to_option loc value)
+    ((Exp.case (constant_to_option loc value)
     (Exp.sequence
-       (Exp.apply ~loc (Exp.ident ({
+       (Exp.apply ~loc (Exp.ident {
            txt = Ldot (Lident "Stream", "junk");
            loc;
-        }))
+        })
        [ ("", match_expression) ])
        statements
     )
     :: other_cases
-    )
+    ) @ [(match exception_type with
+        | Failure -> Exp.case (Pat.any ()) (
+            Exp.apply ~loc (Exp.ident {
+                txt = Lident "raise";
+                loc;
+            })
+            [ ("", (Exp.construct ({
+                txt = Ldot (Lident "Stream", "Failure");
+                loc;
+            }) None))
+            ; ("", Exp.constant (Const_string ("", None)))]
+        )
+        | Error ->  Exp.case (Pat.any ()) (
+            Exp.apply ~loc (Exp.ident {
+                txt = Lident "raise";
+                loc;
+            })
+            [ ("", (Exp.construct ({
+                txt = Ldot (Lident "Stream", "Error");
+                loc;
+            }) None))
+            ; ("", Exp.constant (Const_string ("", None)))]
+        )
+    )])
 
-let create_matches loc match_expression typed_stream_list statements other_cases length =
-    let rec create_matches = function
+let create_matches loc match_expression typed_stream_list statements other_cases exception_type =
+    let rec create_matches exception_type = function
         | [SubStream _ as sub_stream] ->
                 create_lets loc match_expression statements sub_stream
         | (SubStream _ as sub_stream) :: rest ->
-                create_lets loc match_expression (create_matches rest) sub_stream
+                create_lets loc match_expression (create_matches Error rest) sub_stream
         | [(Value value)] ->
                 create_match_peek loc match_expression value statements (match other_cases with
                     | Some cases -> [Exp.case (Pat.any ()) cases]
                     | None -> []
-                    )
+                    ) exception_type
         | (Value value) :: rest ->
-                create_match_peek loc match_expression value (create_matches rest) []
+                create_match_peek loc match_expression value (create_matches Error rest) [] exception_type
         | _ -> raise UnexpectedError
-    in create_matches typed_stream_list
+    in create_matches exception_type typed_stream_list
 
 let transform_match_case loc match_expression stream_list statements other_cases =
     let length = list_length loc stream_list in
     if length > 0 then (
         let typed_stream_list = type_stream_pattern loc stream_list in
-        create_matches loc match_expression typed_stream_list statements other_cases length
+        create_matches loc match_expression typed_stream_list statements other_cases Failure
     )
     else (
         statements

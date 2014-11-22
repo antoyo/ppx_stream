@@ -44,25 +44,17 @@ let assignation stream = match%parse stream with
     (*| [name; "="; expression as value; ";"] -> Assignation (name, value)*)
     (*| [name; "="; expression as value] -> Assignation (name, value)*)
 
-(*let assignation stream = match Stream.npeek 2 stream with
-    | [name; "="] ->
-            for _ = 1 to 2 do
-                Stream.junk stream
-            done;
-            let value = expression stream in
-            match Stream.npeek 1 stream with
-            | [";"] ->
-                    for _ = 1 to 4 do
-                        Stream.junk stream
-                    done;
-                    Assignation (name, value)*)
-
 let () =
     (*match%parse list_stream with
     | "x" -> print_endline "variable"*)
 
-    match assignation list_stream with
-    | Assignation (name, value) -> print_endline name
+    let list_stream = [%stream "x"; "*"; "y"] in
+    match%parse list_stream with
+    | [ start_assign [@as name] ] -> print_endline name
+    | [ operand1; "*"; operand2 ] -> print_endline "multiplication"
+
+    (*match assignation list_stream with
+    | Assignation (name, value) -> print_endline name*)
 
     (*let _ = match%parse list_stream with
     | ["x"; "="; "10"] ->
